@@ -73,7 +73,7 @@ def parse_args(argv=None):
     return args
 
 
-async def simulate_route(dvt, loc, speed, *, on_progress=None, on_loop=None) -> None:
+async def simulate_route(dvt, loc, speed, *, on_progress=None, on_loop=None, coordinate_transform=None) -> None:
     print(f"已开始模拟跑步，速度大约为 {speed} m/s")
     print("会无限循环，按 Ctrl+C 退出")
     print("请勿直接关闭窗口，否则无法还原正常定位")
@@ -85,6 +85,8 @@ async def simulate_route(dvt, loc, speed, *, on_progress=None, on_loop=None) -> 
                 options["on_progress"] = on_progress
             if on_loop is not None:
                 options["on_loop"] = on_loop
+            if coordinate_transform is not None:
+                options["coordinate_transform"] = coordinate_transform
             await run.run(simulation, loc, speed, **options)
         except KeyboardInterrupt:
             logger.info("Ctrl+C received; stopping route simulation")

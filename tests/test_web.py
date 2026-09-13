@@ -4,7 +4,10 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
+import config
+from init import route
 from iosrealrun import web
+from run import bd09Towgs84
 
 POINTS = [{"lat": 30.5, "lng": 120.7}, {"lat": 30.51, "lng": 120.71}]
 
@@ -93,6 +96,43 @@ def test_main_page_and_static_assets_load(tmp_path):
     assert "api/simulation/start" in script.text
     assert default_route.status_code == 200
     assert len(default_route.json()["points"]) > 1
+    assert default_route.json()["points"][0] == bd09Towgs84(route.get_route(config.config.routeConfig)[0])
+
+
+def test_web_cli_uses_new_default_port():
+    args = web.create_parser().parse_args([])
+
+    assert web.DEFAULT_PORT == 17865
+    assert args.port == 17865
+    assert "17865" in web.create_parser().format_help()
+
+
+def test_coordinate_diagnostic_roundtrips_precision_and_reports_boundary(tmp_path):
+    point = {"lat": 30.52802386594508, "lng": 120.7335575167566}
+    with make_client(tmp_path) as client:
+        response = client.post(
+            "/api/diagnostic/coordinates",
+            json={"point": point, "coordinate_mode": "wgs84"},
+        )
+
+    assert response.status_code == 200
+    diagnostic = response.json()
+    assert diagnostic["clicked"] == point
+    assert diagnostic["submitted"] == point
+    assert diagnostic["stored"] == point
+    assert diagnostic["location_simulation_set"] == point
+
+
+def test_coordinate_diagnostic_automatic_conversion_is_explicit(tmp_path):
+    point = {"lat": 30.52802386594508, "lng": 120.7335575167566}
+    with make_client(tmp_path) as client:
+        response = client.post("/api/diagnostic/coordinates", json={"point": point})
+
+    assert response.status_code == 200
+    diagnostic = response.json()
+    assert diagnostic["coordinate_mode"] == "automatic"
+    assert diagnostic["stored"] == point
+    assert diagnostic["location_simulation_set"] != point
 
 
 def test_start_stop_has_one_active_session_per_device(monkeypatch, tmp_path):

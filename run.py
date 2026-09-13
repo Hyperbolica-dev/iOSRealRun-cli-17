@@ -134,7 +134,7 @@ def fixLockT(loc: list, v, dt):
             t += dt
     return fixedLoc
 
-async def run1(dvt, loc: list, v, dt=0.2, on_progress=None):
+async def run1(dvt, loc: list, v, dt=0.2, on_progress=None, coordinate_transform=None):
     import asyncio
     fixedLoc = fixLockT(loc, v, dt)
     nList = (5, 6, 7, 8, 9)
@@ -142,8 +142,10 @@ async def run1(dvt, loc: list, v, dt=0.2, on_progress=None):
     fixedLoc = randLoc(fixedLoc, n=n)  # a path will be divided into n parts for random route
     clock = time.time()
     for index, i in enumerate(fixedLoc):
-        # utils.setLoc(bd09Towgs84(i))
-        await location.set_location(dvt, **bd09Towgs84(i))
+        # Keep the historical BD-09 conversion unless a caller explicitly
+        # supplies a boundary transform (the Web UI does this).
+        simulation_point = bd09Towgs84(i) if coordinate_transform is None else coordinate_transform(i)
+        await location.set_location(dvt, **simulation_point)
         if on_progress is not None:
             on_progress(index + 1, len(fixedLoc))
         remaining = dt - (time.time() - clock)
@@ -151,12 +153,18 @@ async def run1(dvt, loc: list, v, dt=0.2, on_progress=None):
             await asyncio.sleep(remaining)
         clock = time.time()
 
-async def run(dvt, loc: list, v, d=15, on_progress=None, on_loop=None):
+async def run(dvt, loc: list, v, d=15, on_progress=None, on_loop=None, coordinate_transform=None):
     random.seed(time.time())
     loop_count = 0
     while True:
         vRand = 1000/(1000/v-(2*random.random()-1)*d)
-        await run1(dvt, loc, vRand, on_progress=on_progress)
+        await run1(
+            dvt,
+            loc,
+            vRand,
+            on_progress=on_progress,
+            coordinate_transform=coordinate_transform,
+        )
         loop_count += 1
         if on_loop is not None:
             on_loop(loop_count)
