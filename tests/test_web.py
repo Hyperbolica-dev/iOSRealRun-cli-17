@@ -111,6 +111,13 @@ def test_main_page_and_static_assets_load(tmp_path):
     assert "min-width: 9rem" in stylesheet.text
     assert script.status_code == 200
     assert "api/simulation/start" in script.text
+    assert 'id="load"' not in page.text
+    assert 'id="export"' in page.text
+    assert "route-select').onchange" in script.text
+    assert "new Blob" in script.text
+    assert "String(point.lat)" in script.text
+    assert "route.txt" in script.text
+    assert "导入坐标格式" in page.text
     assert default_route.status_code == 200
     assert len(default_route.json()["points"]) > 1
     assert default_route.json()["points"][0] == legacy_bd09_route_to_wgs84(route.get_route(config.config.routeConfig)[0])
