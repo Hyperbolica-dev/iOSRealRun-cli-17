@@ -15,6 +15,7 @@ dependencies = [
     "platformdirs>=4.2.0",
     "pymobiledevice3>=11.12.4",
     "PyYAML>=6.0.1",
+    "python-multipart>=0.0.9",
     "uvicorn>=0.30.0",
 ]
 
