@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>iOSRealRun</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header><h1>iOSRealRun</h1><span id="state" class="state">idle</span></header>
+  <main>
+    <aside>
+      <section>
+        <h2>Device</h2>
+        <select id="device-select"><option value="">Refresh devices</option></select>
+        <button id="refresh-devices">Refresh</button>
+        <p id="device-info" class="muted">No device selected.</p>
+        <p id="backend" class="muted">Backend: —</p>
+      </section>
+      <section>
+        <h2>Speed</h2>
+        <label for="speed">m/s</label>
+        <input id="speed" type="number" min="0.1" max="20" step="0.1" value="3.3">
+      </section>
+      <section>
+        <h2>Route</h2>
+        <p><strong id="point-count">0</strong> points · <strong id="distance">0 m</strong></p>
+        <div class="button-row">
+          <button id="undo">Remove last</button>
+          <button id="clear">Clear</button>
+          <button id="fit">Fit</button>
+        </div>
+        <div class="button-row">
+          <button id="start" class="primary">Start</button>
+          <button id="stop" class="danger" disabled>Stop</button>
+        </div>
+      </section>
+      <section>
+        <h2>Saved routes</h2>
+        <select id="route-select"><option value="">Choose a saved route</option></select>
+        <div class="button-row">
+          <button id="load-default">Load default</button>
+          <button id="load">Load</button>
+          <button id="save">Save current</button>
+          <button id="delete">Delete</button>
+        </div>
+      </section>
+      <section>
+        <p id="message" class="message"></p>
+        <p id="error" class="error"></p>
+        <p id="progress" class="muted">Loop: 0 · Point: — · Elapsed: 0s</p>
+      </section>
+    </aside>
+    <div id="map" aria-label="Route map"></div>
+  </main>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>
