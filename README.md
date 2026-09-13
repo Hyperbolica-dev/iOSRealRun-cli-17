@@ -30,6 +30,19 @@ uv run iosrealrun --route <path>
 uv run iosrealrun --list-routes
 ```
 
+### 本地 Web UI
+
+启动本地 Web UI，然后打开程序打印的 localhost 地址：
+
+```shell
+uv sync
+uv run iosrealrun-ui
+```
+
+默认只监听 `127.0.0.1:8765`，不会暴露到局域网。连接 USB 设备并信任此电脑，开启 Developer Mode，在页面中选择设备、编辑路线、设置速度后点击 Start；停止前请尽量点击 Stop，程序也会在取消或退出时尝试清除模拟定位。
+
+Linux 上 iOS 17.4+ 的 userspace/CoreDeviceProxy 路径不需要 root；iOS 17.0–17.3.1 仍需要先运行 privileged `tunneld`。
+
 ### 平台和 iOS 17 tunnel 支持矩阵
 
 | 主机 / iOS | 后端 | 权限 | 验证状态 |
