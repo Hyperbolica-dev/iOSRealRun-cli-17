@@ -25,6 +25,9 @@ import config
 from driver import connect
 from init import init, route, tunnel
 from iosrealrun import cli
+from iosrealrun.coordinates import CoordinateMode, to_simulation
+from run import bd09Towgs84
+from util import route as route_parser
 
 logger = logging.getLogger(__name__)
 WEB_ASSETS = Path(__file__).with_name("web_static")
@@ -40,6 +43,7 @@ class SimulationRequest(BaseModel):
     udid: str = Field(min_length=1)
     points: list[RoutePoint]
     speed: float = Field(default=3.3, gt=0, le=20)
+    coordinate_mode: CoordinateMode = "automatic"
 
 
 class RouteRequest(BaseModel):
@@ -48,6 +52,11 @@ class RouteRequest(BaseModel):
 
 class StopRequest(BaseModel):
     udid: str = Field(min_length=1)
+
+
+class CoordinateDiagnosticRequest(BaseModel):
+    point: RoutePoint
+    coordinate_mode: CoordinateMode = "automatic"
 
 
 class DeviceSelectionError(Exception):
@@ -103,14 +112,23 @@ class RouteStorage:
             raise FileNotFoundError(name)
         return route.get_route(path)
 
+    @staticmethod
+    def serialize(points: list[dict[str, float]]) -> str:
+        return ",".join(
+            json.dumps({"lng": str(point["lng"]), "lat": str(point["lat"])}, separators=(",", ":"))
+            for point in points
+        )
+
+    @classmethod
+    def roundtrip(cls, points: list[dict[str, float]]) -> list[dict[str, float]]:
+        """Round-trip points through the existing route representation."""
+
+        return route_parser.parse_route(cls.serialize(points))
+
     def save(self, name: str, points: list[RoutePoint]) -> str:
         normalized = normalize_points(points)
         path = self._path(name)
-        content = ",".join(
-            json.dumps({"lng": str(point["lng"]), "lat": str(point["lat"])}, separators=(",", ":"))
-            for point in normalized
-        )
-        path.write_text(content, encoding="utf-8")
+        path.write_text(self.serialize(normalized), encoding="utf-8")
         return path.name
 
     def delete(self, name: str) -> None:
@@ -129,6 +147,7 @@ class SimulationSession:
     udid: str
     points: list[dict[str, float]]
     speed: float
+    coordinate_mode: CoordinateMode = "automatic"
     state: str = "idle"
     backend: str | None = None
     loop_count: int = 0
@@ -145,6 +164,7 @@ class SimulationSession:
             "backend": self.backend,
             "route_points": len(self.points),
             "speed": self.speed,
+            "coordinate_mode": self.coordinate_mode,
             "loop_count": self.loop_count,
             "current_index": self.current_index,
             "elapsed_seconds": elapsed,
@@ -187,7 +207,13 @@ class SimulationManager:
             raise DeviceSelectionError(f"device not found over USB: {udid}")
         return match
 
-    async def start(self, udid: str, points: list[RoutePoint], speed: float) -> dict[str, Any]:
+    async def start(
+        self,
+        udid: str,
+        points: list[RoutePoint],
+        speed: float,
+        coordinate_mode: CoordinateMode = "automatic",
+    ) -> dict[str, Any]:
         normalized = normalize_points(points)
         serial = await self._require_device(udid)
         key = serial.replace("-", "").lower()
@@ -195,7 +221,13 @@ class SimulationManager:
             existing = self.sessions.get(key)
             if existing and existing.state in {"connecting", "running", "stopping"}:
                 raise RuntimeError("a simulation is already active for this device")
-            session = SimulationSession(serial, normalized, speed, state="connecting")
+            session = SimulationSession(
+                serial,
+                normalized,
+                speed,
+                coordinate_mode=coordinate_mode,
+                state="connecting",
+            )
             self.sessions[key] = session
             session.task = asyncio.create_task(self._run_session(session))
         return session.status()
@@ -220,6 +252,7 @@ class SimulationManager:
                         dvt,
                         session.points,
                         session.speed,
+                        coordinate_transform=lambda point: to_simulation(point, session.coordinate_mode),
                         on_progress=progress,
                         on_loop=loop_finished,
                     )
@@ -288,10 +321,38 @@ def create_app(routes_dir: Path | str | None = None, manager: SimulationManager 
     async def status(udid: str | None = None) -> dict[str, Any]:
         return await simulation_manager.status(udid)
 
+    @app.post("/api/diagnostic/coordinates")
+    async def coordinate_diagnostic(request: CoordinateDiagnosticRequest) -> dict[str, Any]:
+        submitted = normalize_points([request.point], require_two=False)[0]
+        stored = simulation_manager.routes.roundtrip([submitted])[0]
+        simulation_point = to_simulation(stored, request.coordinate_mode)
+        result = {
+            "coordinate_mode": request.coordinate_mode,
+            "clicked": submitted,
+            "submitted": submitted,
+            "stored": stored,
+            "location_simulation_set": simulation_point,
+        }
+        logger.info(
+            "coordinate diagnostic: clicked=%s submitted=%s stored=%s "
+            "LocationSimulation.set=%s mode=%s",
+            result["clicked"],
+            result["submitted"],
+            result["stored"],
+            result["location_simulation_set"],
+            request.coordinate_mode,
+        )
+        return result
+
     @app.post("/api/simulation/start", status_code=202)
     async def start_simulation(request: SimulationRequest) -> dict[str, Any]:
         try:
-            return await simulation_manager.start(request.udid, request.points, request.speed)
+            return await simulation_manager.start(
+                request.udid,
+                request.points,
+                request.speed,
+                request.coordinate_mode,
+            )
         except DeviceSelectionError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
         except RuntimeError as error:
@@ -309,7 +370,11 @@ def create_app(routes_dir: Path | str | None = None, manager: SimulationManager 
 
     @app.get("/api/routes/default")
     async def load_default_route() -> dict[str, Any]:
-        return {"name": Path(config.config.routeConfig).name, "points": route.get_route()}
+        # HNroute.txt predates the Web UI and follows the CLI's historical
+        # BD-09 input convention. Convert only at this Web UI boundary so the
+        # map receives the canonical WGS-84 representation.
+        points = [bd09Towgs84(point) for point in route.get_route()]
+        return {"name": Path(config.config.routeConfig).name, "points": points}
 
     @app.get("/api/routes/{name}")
     async def load_route(name: str) -> dict[str, Any]:
@@ -344,13 +409,19 @@ def create_app(routes_dir: Path | str | None = None, manager: SimulationManager 
 
 app = create_app()
 
+DEFAULT_PORT = 17865
 
-def main(argv: list[str] | None = None) -> None:
+
+def create_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run the local iOSRealRun web UI")
     parser.add_argument("--host", default="127.0.0.1", help="bind address (default: 127.0.0.1)")
-    parser.add_argument("--port", type=int, default=8765, help="bind port (default: 8765)")
+    parser.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"bind port (default: {DEFAULT_PORT})")
     parser.add_argument("--open-browser", action="store_true", help="open the UI in the default browser")
-    args = parser.parse_args(argv)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = create_parser().parse_args(argv)
     if args.host not in {"127.0.0.1", "localhost", "::1"}:
         logger.warning("binding beyond localhost exposes an unauthenticated UI: %s", args.host)
     url = f"http://{args.host}:{args.port}"
