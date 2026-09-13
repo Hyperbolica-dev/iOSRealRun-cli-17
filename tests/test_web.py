@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 import config
 from init import route
 from iosrealrun import web
+from iosrealrun.coordinates import wgs84_to_gcj02
 from run import legacy_bd09_route_to_wgs84
 
 POINTS = [{"lat": 30.5, "lng": 120.7}, {"lat": 30.51, "lng": 120.71}]
@@ -110,6 +111,146 @@ def test_main_page_and_static_assets_load(tmp_path):
     assert default_route.status_code == 200
     assert len(default_route.json()["points"]) > 1
     assert default_route.json()["points"][0] == legacy_bd09_route_to_wgs84(route.get_route(config.config.routeConfig)[0])
+
+
+def test_route_import_control_and_endpoint_are_available(tmp_path):
+    route_text = b'{"lat":30.52802386594508,"lng":120.7335575167566},{"lat":30.528128854802127,"lng":120.73356200828415}'
+    with make_client(tmp_path) as client:
+        page = client.get("/")
+        script = client.get("/static/app.js")
+        response = client.post(
+            "/api/routes/import",
+            files={"file": ("route.txt", route_text, "text/plain")},
+            data={"coordinate_system": "wgs84"},
+        )
+
+    assert 'id="route-file"' in page.text
+    assert 'value="wgs84"' in page.text
+    assert "/api/routes/import" in script.text
+    assert response.status_code == 200
+    assert response.json()["points"] == [
+        {"lat": 30.52802386594508, "lng": 120.7335575167566},
+        {"lat": 30.528128854802127, "lng": 120.73356200828415},
+    ]
+    assert response.json()["point_count"] == 2
+
+
+def test_wgs84_import_can_be_saved_and_reloaded_without_conversion(tmp_path):
+    route_text = b'{"lat":30.52802386594508,"lng":120.7335575167566},{"lat":30.528128854802127,"lng":120.73356200828415}'
+    with make_client(tmp_path) as client:
+        imported = client.post(
+            "/api/routes/import",
+            files={"file": ("route.txt", route_text)},
+            data={"coordinate_system": "wgs84"},
+        ).json()["points"]
+        assert client.put("/api/routes/imported", json={"points": imported}).status_code == 201
+        reloaded = client.get("/api/routes/imported.txt")
+
+    assert reloaded.json()["points"] == imported
+
+
+def test_imported_wgs84_points_use_existing_simulation_path(monkeypatch, tmp_path):
+    device = SimpleNamespace(serial="device-a", connection_type="USB")
+    imported = web.parse_imported_route(
+        b'{"lat":30.52802386594508,"lng":120.7335575167566},{"lat":30.528128854802127,"lng":120.73356200828415}',
+        "wgs84",
+    )
+    received = []
+
+    async def discover():
+        return [device]
+
+    async def fake_run(session):
+        received.extend(session.points)
+
+    monkeypatch.setattr(web.connect, "discover_devices", discover)
+
+    async def exercise():
+        manager = web.SimulationManager(web.RouteStorage(tmp_path / "routes"))
+        await manager._require_device("device-a")
+        monkeypatch.setattr(manager, "_run_session", fake_run)
+        session_status = await manager.start(
+            "device-a",
+            [web.RoutePoint(**point) for point in imported],
+            3.3,
+        )
+        session = manager.sessions["devicea"]
+        await session.task
+        return session_status
+
+    assert asyncio.run(exercise())["state"] == "connecting"
+    assert received == imported
+
+
+def test_legacy_bd09_import_converts_each_point_once(monkeypatch, tmp_path):
+    raw_points = [{"lat": 30.5, "lng": 120.7}, {"lat": 30.51, "lng": 120.71}]
+    calls = []
+
+    def convert_once(point):
+        calls.append(point)
+        return {"lat": point["lat"] + 1, "lng": point["lng"] + 1}
+
+    monkeypatch.setattr(web, "legacy_bd09_route_to_wgs84", convert_once)
+    route_text = b'{"lat":30.5,"lng":120.7},{"lat":30.51,"lng":120.71}'
+    with make_client(tmp_path) as client:
+        response = client.post(
+            "/api/routes/import",
+            files={"file": ("legacy.txt", route_text)},
+            data={"coordinate_system": "bd09"},
+        )
+
+    assert response.status_code == 200
+    assert calls == raw_points
+    assert response.json()["points"] == [
+        {"lat": 31.5, "lng": 121.7},
+        {"lat": 31.51, "lng": 121.71},
+    ]
+
+
+def test_gcj02_import_converts_to_wgs84_once(tmp_path):
+    original = [(30.52802386594508, 120.7335575167566), (30.528128854802127, 120.73356200828415)]
+    gcj_points = [wgs84_to_gcj02(*point) for point in original]
+    route_text = ",".join(
+        f'{{"lat":{lat!r},"lng":{lng!r}}}' for lat, lng in gcj_points
+    ).encode()
+    with make_client(tmp_path) as client:
+        response = client.post(
+            "/api/routes/import",
+            files={"file": ("gcj.txt", route_text)},
+            data={"coordinate_system": "gcj02"},
+        )
+
+    assert response.status_code == 200
+    imported = response.json()["points"]
+    assert imported[0]["lat"] == pytest.approx(original[0][0], abs=2e-6)
+    assert imported[0]["lng"] == pytest.approx(original[0][1], abs=5e-6)
+
+
+@pytest.mark.parametrize(
+    ("filename", "content", "expected_detail"),
+    [
+        ("bad.txt", b'{"lat":91,"lng":120},{"lat":30,"lng":120}', "纬度"),
+        ("bad.txt", b"not a route", "路线文件格式错误"),
+        ("empty.txt", b"", "路线至少需要两个点"),
+    ],
+)
+def test_route_import_rejects_invalid_files(tmp_path, filename, content, expected_detail):
+    with make_client(tmp_path) as client:
+        response = client.post("/api/routes/import", files={"file": (filename, content)})
+
+    assert response.status_code == 422
+    assert expected_detail in response.json()["detail"]
+
+
+def test_route_import_rejects_oversized_files(tmp_path):
+    with make_client(tmp_path) as client:
+        response = client.post(
+            "/api/routes/import",
+            files={"file": ("large.txt", b"x" * (web.MAX_ROUTE_UPLOAD_BYTES + 1))},
+        )
+
+    assert response.status_code == 413
+    assert "文件过大" in response.json()["detail"]
 
 
 def test_default_legacy_route_is_converted_once_for_web(monkeypatch, tmp_path):
