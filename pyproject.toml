@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "iosrealrun-cli"
+version = "0.2.0"
+description = "Route-based iOS location simulation CLI"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "coloredlogs>=15.0.1",
+    "geopy>=2.4.1",
+    "pymobiledevice3>=11.12.4",
+    "PyYAML>=6.0.1",
+]
+
+[project.scripts]
+iosrealrun = "iosrealrun.cli:main"
+
+[tool.setuptools]
+include-package-data = true
+py-modules = ["config", "main", "run"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["iosrealrun*", "driver*", "init*", "util*"]
+
+[tool.setuptools.package-data]
+iosrealrun = ["data/*.yaml", "data/*.txt"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
