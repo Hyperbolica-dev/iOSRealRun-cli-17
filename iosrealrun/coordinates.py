@@ -1,16 +1,12 @@
-"""Coordinate conversions used at the Web UI boundary.
+"""Coordinate helpers for documented route coordinate systems.
 
-The Web UI and saved routes use WGS-84 coordinates. The legacy CLI route
-pipeline remains unchanged; its historical BD-09 conversion is still the
-default in :mod:`run`.
+The Web UI uses WGS-84 end-to-end. The WGS-84/GCJ-02 helpers remain isolated
+for explicit conversion use and are not part of the Web UI simulation path.
 """
 
 from __future__ import annotations
 
 import math
-from typing import Literal
-
-CoordinateMode = Literal["automatic", "wgs84", "gcj02"]
 
 _PI = math.pi
 _A = 6378245.0
@@ -76,12 +72,7 @@ def gcj02_to_wgs84(lat: float, lng: float) -> tuple[float, float]:
     return lat - d_lat, lng - d_lng
 
 
-def to_simulation(point: dict[str, float], mode: CoordinateMode = "automatic") -> dict[str, float]:
-    """Convert a canonical Web UI point to the coordinate sent to DVT."""
+def web_wgs84_to_location(point: dict[str, float]) -> dict[str, float]:
+    """Return a Web UI WGS-84 point unchanged for LocationSimulation."""
 
-    if mode == "wgs84":
-        return point.copy()
-    if mode not in {"automatic", "gcj02"}:
-        raise ValueError(f"unsupported coordinate mode: {mode}")
-    lat, lng = wgs84_to_gcj02(point["lat"], point["lng"])
-    return {"lat": lat, "lng": lng}
+    return point.copy()

@@ -121,7 +121,7 @@
   $('start').onclick = async () => {
     if (!$('device-select').value) return error('请先选择设备');
     try {
-      await request('/api/simulation/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ udid: $('device-select').value, points, speed: Number($('speed').value), coordinate_mode: $('coordinate-mode').value }) });
+      await request('/api/simulation/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ udid: $('device-select').value, points, speed: Number($('speed').value) }) });
       message('模拟正在连接');
     } catch (requestError) { error(requestError.message); }
   };
@@ -134,7 +134,7 @@
     try {
       const result = await request('/api/diagnostic/coordinates', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ point: points[0], coordinate_mode: $('coordinate-mode').value })
+        body: JSON.stringify({ point: points[0] })
       });
       $('coordinate-diagnostic').textContent = [
         `Leaflet 点击：${JSON.stringify(result.clicked)}`,

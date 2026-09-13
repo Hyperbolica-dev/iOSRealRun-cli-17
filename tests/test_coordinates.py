@@ -6,7 +6,7 @@ import run
 from iosrealrun.coordinates import (
     gcj02_to_wgs84,
     is_in_mainland_china,
-    to_simulation,
+    web_wgs84_to_location,
     wgs84_to_gcj02,
 )
 
@@ -31,7 +31,7 @@ def test_conversion_is_identity_outside_mainland_china():
     assert not is_in_mainland_china(*point)
     assert wgs84_to_gcj02(*point) == point
     assert gcj02_to_wgs84(*point) == point
-    assert to_simulation({"lat": point[0], "lng": point[1]}) == {
+    assert web_wgs84_to_location({"lat": point[0], "lng": point[1]}) == {
         "lat": point[0],
         "lng": point[1],
     }
@@ -42,14 +42,10 @@ def test_special_regions_outside_mainland_are_not_converted():
     assert not is_in_mainland_china(23.6978, 120.9605)  # Taiwan
 
 
-def test_automatic_mode_only_converts_inside_mainland_china():
-    china = {"lat": 30.52802386594508, "lng": 120.7335575167566}
-    outside = {"lat": 35.6762, "lng": 139.6503}
+def test_web_wgs84_location_boundary_does_not_convert_mainland_china():
+    point = {"lat": 30.52802386594508, "lng": 120.7335575167566}
 
-    assert to_simulation(china) != china
-    assert to_simulation(outside) == outside
-    assert to_simulation(china, "wgs84") == china
-    assert to_simulation(china, "gcj02") == to_simulation(china)
+    assert web_wgs84_to_location(point) == point
 
 
 def test_run1_passes_web_coordinate_transform_in_lat_lng_order(monkeypatch):
@@ -75,7 +71,7 @@ def test_run1_passes_web_coordinate_transform_in_lat_lng_order(monkeypatch):
             points,
             3.3,
             dt=0.2,
-            coordinate_transform=lambda point: to_simulation(point, "wgs84"),
+            coordinate_transform=web_wgs84_to_location,
         )
     )
 
@@ -93,7 +89,7 @@ def test_cli_run1_keeps_legacy_bd09_transform_by_default(monkeypatch):
 
     monkeypatch.setattr(run.location, "set_location", set_location)
     monkeypatch.setattr(run, "randLoc", lambda points, n: points)
-    monkeypatch.setattr(run, "bd09Towgs84", lambda _point: {"lat": 1.25, "lng": 2.5})
+    monkeypatch.setattr(run, "legacy_bd09_route_to_wgs84", lambda _point: {"lat": 1.25, "lng": 2.5})
     monkeypatch.setattr(asyncio, "sleep", no_sleep)
 
     asyncio.run(run.run1(object(), [{"lat": 30.5, "lng": 120.7}, {"lat": 30.51, "lng": 120.71}], 3.3, dt=0.2))

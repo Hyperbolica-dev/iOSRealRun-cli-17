@@ -3,7 +3,7 @@ run.py
 automatically run the route
 """
 
-"""修正坐标误差，百度取点使用 BD-09 坐标系，iOS使用 WGS-09 坐标系，进行转换"""
+"""Legacy CLI route runner; historical route inputs use BD-09 semantics."""
 import math
 import random
 import time
@@ -13,7 +13,7 @@ from geopy.distance import geodesic
 from driver import location
 
 
-def bd09Towgs84(position):
+def legacy_bd09_route_to_wgs84(position):
     wgs_p = {}
 
     x_pi = 3.14159265358979324 * 3000.0 / 180.0
@@ -57,6 +57,10 @@ def bd09Towgs84(position):
     wgs_p["lat"] = gcj_lat * 2 - gcj_lat - d_lat
     wgs_p["lng"] = gcj_lng * 2 - gcj_lng - d_lng
     return wgs_p
+
+
+# Keep the old public name for source compatibility with existing users.
+bd09Towgs84 = legacy_bd09_route_to_wgs84
 
 # get the ditance according to the latitude and longitude
 def geodistance(p1, p2):
@@ -144,7 +148,9 @@ async def run1(dvt, loc: list, v, dt=0.2, on_progress=None, coordinate_transform
     for index, i in enumerate(fixedLoc):
         # Keep the historical BD-09 conversion unless a caller explicitly
         # supplies a boundary transform (the Web UI does this).
-        simulation_point = bd09Towgs84(i) if coordinate_transform is None else coordinate_transform(i)
+        simulation_point = (
+            legacy_bd09_route_to_wgs84(i) if coordinate_transform is None else coordinate_transform(i)
+        )
         await location.set_location(dvt, **simulation_point)
         if on_progress is not None:
             on_progress(index + 1, len(fixedLoc))

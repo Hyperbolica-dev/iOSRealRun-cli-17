@@ -41,7 +41,7 @@ uv run iosrealrun-ui
 
 默认只监听 `127.0.0.1:17865`，不会暴露到局域网。连接 USB 设备并信任此电脑，开启 Developer Mode，在页面中选择设备、编辑路线、设置速度后点击 Start；停止前请尽量点击 Stop，程序也会在取消或退出时尝试清除模拟定位。
 
-Web UI 的地图和保存路线以 WGS-84 为内部坐标。坐标诊断按钮可以对比 Leaflet 点击、API 提交、路线存储以及传给 `LocationSimulation.set()` 的坐标。默认“自动”模式只在中国大陆区域把 Web UI 的 WGS-84 点转换为 GCJ-02；也可以明确选择 WGS-84 或 GCJ-02。内置的旧 `HNroute.txt` 在 Web UI 加载时仅转换为地图使用的 WGS-84 表示；旧 CLI 路线仍保持原有 BD-09 兼容行为，不会被 Web UI 坐标设置静默改写。
+Web UI 的地图、保存路线和模拟定位统一使用 WGS-84。该 WGS-84 Web UI 路径已通过实体 iPhone 的模拟定位验证。坐标诊断按钮可以对比 Leaflet 点击、API 提交、路线存储以及传给 `LocationSimulation.set()` 的坐标；正常情况下四者只存在浮点表示差异，不会因为地理位置在中国大陆而自动转换。内置的旧 `HNroute.txt` 在 Web UI 加载时仅转换为地图使用的 WGS-84 表示；旧 CLI 路线仍保持原有 BD-09 兼容行为。
 
 Linux 上 iOS 17.4+ 的 userspace/CoreDeviceProxy 路径不需要 root；iOS 17.0–17.3.1 仍需要先运行 privileged `tunneld`。
 
