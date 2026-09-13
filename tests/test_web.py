@@ -106,6 +106,9 @@ def test_main_page_and_static_assets_load(tmp_path):
     assert page.status_code == 200
     assert "leaflet" in page.text.lower()
     assert stylesheet.status_code == 200
+    assert "route-actions" in page.text
+    assert "white-space: nowrap" in stylesheet.text
+    assert "min-width: 9rem" in stylesheet.text
     assert script.status_code == 200
     assert "api/simulation/start" in script.text
     assert default_route.status_code == 200
@@ -123,16 +126,51 @@ def test_route_import_control_and_endpoint_are_available(tmp_path):
             files={"file": ("route.txt", route_text, "text/plain")},
             data={"coordinate_system": "wgs84"},
         )
+        route_names = client.get("/api/routes")
 
     assert 'id="route-file"' in page.text
     assert 'value="wgs84"' in page.text
+    assert "导入路线文件" in page.text
+    assert "保存当前路线" in page.text
     assert "/api/routes/import" in script.text
     assert response.status_code == 200
+    assert response.json()["saved_name"] == "route.txt"
     assert response.json()["points"] == [
         {"lat": 30.52802386594508, "lng": 120.7335575167566},
         {"lat": 30.528128854802127, "lng": 120.73356200828415},
     ]
     assert response.json()["point_count"] == 2
+    assert route_names.json() == ["route.txt"]
+
+
+def test_import_filename_becomes_safe_saved_route_name(tmp_path):
+    route_text = b'{"lat":30.5,"lng":120.7},{"lat":30.51,"lng":120.71}'
+    with make_client(tmp_path) as client:
+        response = client.post(
+            "/api/routes/import",
+            files={"file": ("../ZJG-East-C.txt", route_text)},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["saved_name"] == "ZJG-East-C.txt"
+    assert not (tmp_path / "ZJG-East-C.txt").exists()
+
+
+def test_duplicate_import_gets_unique_name_without_overwrite(tmp_path):
+    first = b'{"lat":30.5,"lng":120.7},{"lat":30.51,"lng":120.71}'
+    second = b'{"lat":31.5,"lng":121.7},{"lat":31.51,"lng":121.71}'
+    with make_client(tmp_path) as client:
+        first_response = client.post("/api/routes/import", files={"file": ("same.txt", first)})
+        second_response = client.post("/api/routes/import", files={"file": ("same.txt", second)})
+        first_route = client.get("/api/routes/same.txt")
+        second_route = client.get("/api/routes/same-2.txt")
+        route_names = client.get("/api/routes")
+
+    assert first_response.json()["saved_name"] == "same.txt"
+    assert second_response.json()["saved_name"] == "same-2.txt"
+    assert first_route.json()["points"][0] == {"lat": 30.5, "lng": 120.7}
+    assert second_route.json()["points"][0] == {"lat": 31.5, "lng": 121.7}
+    assert route_names.json() == ["same-2.txt", "same.txt"]
 
 
 def test_wgs84_import_can_be_saved_and_reloaded_without_conversion(tmp_path):
@@ -198,13 +236,16 @@ def test_legacy_bd09_import_converts_each_point_once(monkeypatch, tmp_path):
             files={"file": ("legacy.txt", route_text)},
             data={"coordinate_system": "bd09"},
         )
+        saved_route = client.get("/api/routes/legacy.txt")
 
     assert response.status_code == 200
     assert calls == raw_points
+    assert response.json()["saved_name"] == "legacy.txt"
     assert response.json()["points"] == [
         {"lat": 31.5, "lng": 121.7},
         {"lat": 31.51, "lng": 121.71},
     ]
+    assert saved_route.json()["points"] == response.json()["points"]
 
 
 def test_gcj02_import_converts_to_wgs84_once(tmp_path):
@@ -251,6 +292,15 @@ def test_route_import_rejects_oversized_files(tmp_path):
 
     assert response.status_code == 413
     assert "文件过大" in response.json()["detail"]
+
+
+def test_failed_import_does_not_create_saved_route(tmp_path):
+    with make_client(tmp_path) as client:
+        response = client.post("/api/routes/import", files={"file": ("bad.txt", b"not a route")})
+        routes = client.get("/api/routes")
+
+    assert response.status_code == 422
+    assert routes.json() == []
 
 
 def test_default_legacy_route_is_converted_once_for_web(monkeypatch, tmp_path):

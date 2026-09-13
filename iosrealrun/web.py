@@ -32,7 +32,7 @@ from util import route as route_parser
 
 logger = logging.getLogger(__name__)
 WEB_ASSETS = Path(__file__).with_name("web_static")
-ROUTE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
+ROUTE_NAME_RE = re.compile(r"^[A-Za-z0-9\u4e00-\u9fff][A-Za-z0-9\u4e00-\u9fff_.-]{0,63}$")
 MAX_ROUTE_UPLOAD_BYTES = 1024 * 1024
 
 
@@ -82,6 +82,18 @@ def normalize_route_name(name: str) -> str:
     if not ROUTE_NAME_RE.fullmatch(name) or name in {".", ".."}:
         raise ValueError("invalid route name")
     return name if name.endswith(".txt") else f"{name}.txt"
+
+
+def route_name_from_filename(filename: str | None) -> str:
+    """Create a safe route name from an uploaded filename."""
+
+    basename = (filename or "").replace("\\", "/").rsplit("/", 1)[-1]
+    stem = Path(basename).stem
+    stem = re.sub(r"[^\w.-]+", "_", stem, flags=re.UNICODE).strip("._-")
+    if not stem:
+        stem = "imported-route"
+    stem = stem[:64]
+    return normalize_route_name(stem)
 
 
 def route_distance(points: list[dict[str, float]]) -> float:
@@ -172,6 +184,17 @@ class RouteStorage:
         path = self._path(name)
         path.write_text(self.serialize(normalized), encoding="utf-8")
         return path.name
+
+    def save_unique(self, name: str, points: list[dict[str, float]]) -> str:
+        normalized = normalize_points([RoutePoint(**point) for point in points])
+        base = Path(normalize_route_name(name)).stem
+        for number in range(1, 10000):
+            suffix = "" if number == 1 else f"-{number}"
+            candidate = f"{base[:64 - len(suffix)]}{suffix}"
+            path = self._path(candidate)
+            if not path.exists():
+                return self.save(candidate, [RoutePoint(**point) for point in normalized])
+        raise ValueError("无法生成唯一的路线文件名")
 
     def delete(self, name: str) -> None:
         path = self._path(name)
@@ -393,12 +416,17 @@ def create_app(routes_dir: Path | str | None = None, manager: SimulationManager 
             points = parse_imported_route(content, coordinate_system)
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
+        try:
+            saved_name = simulation_manager.routes.save_unique(route_name_from_filename(file.filename), points)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=f"路线保存失败：{error}") from error
         return {
             "filename": file.filename,
             "coordinate_system": coordinate_system,
             "points": points,
             "point_count": len(points),
             "distance_meters": route_distance(points),
+            "saved_name": saved_name,
         }
 
     @app.post("/api/simulation/start", status_code=202)

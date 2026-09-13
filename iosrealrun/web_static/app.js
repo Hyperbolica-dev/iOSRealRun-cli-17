@@ -117,7 +117,9 @@
     try {
       const result = await request('/api/routes/import', { method: 'POST', body: form });
       loadPoints(result.points);
-      message(`已导入 ${result.point_count} 个路线点；路线长度：${$('distance').textContent}`);
+      await refreshRoutes();
+      $('route-select').value = result.saved_name;
+      message(`已导入并保存路线“${result.saved_name}”，共 ${result.point_count} 个路线点。`);
     } catch (requestError) { error(requestError.message); }
     $('route-file').value = '';
   };
