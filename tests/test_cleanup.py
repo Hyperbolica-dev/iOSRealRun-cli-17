@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-import main
+from iosrealrun import cli as main
 
 
 class FakeLocationSimulation:

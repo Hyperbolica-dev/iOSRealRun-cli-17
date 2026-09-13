@@ -1,7 +1,7 @@
 import pytest
 
-import main
 from init import route
+from iosrealrun import cli as main
 
 
 def test_custom_route_path_selection(tmp_path):
