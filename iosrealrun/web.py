@@ -25,8 +25,8 @@ import config
 from driver import connect
 from init import init, route, tunnel
 from iosrealrun import cli
-from iosrealrun.coordinates import CoordinateMode, to_simulation
-from run import bd09Towgs84
+from iosrealrun.coordinates import web_wgs84_to_location
+from run import legacy_bd09_route_to_wgs84
 from util import route as route_parser
 
 logger = logging.getLogger(__name__)
@@ -43,7 +43,6 @@ class SimulationRequest(BaseModel):
     udid: str = Field(min_length=1)
     points: list[RoutePoint]
     speed: float = Field(default=3.3, gt=0, le=20)
-    coordinate_mode: CoordinateMode = "automatic"
 
 
 class RouteRequest(BaseModel):
@@ -56,7 +55,6 @@ class StopRequest(BaseModel):
 
 class CoordinateDiagnosticRequest(BaseModel):
     point: RoutePoint
-    coordinate_mode: CoordinateMode = "automatic"
 
 
 class DeviceSelectionError(Exception):
@@ -147,7 +145,6 @@ class SimulationSession:
     udid: str
     points: list[dict[str, float]]
     speed: float
-    coordinate_mode: CoordinateMode = "automatic"
     state: str = "idle"
     backend: str | None = None
     loop_count: int = 0
@@ -164,7 +161,6 @@ class SimulationSession:
             "backend": self.backend,
             "route_points": len(self.points),
             "speed": self.speed,
-            "coordinate_mode": self.coordinate_mode,
             "loop_count": self.loop_count,
             "current_index": self.current_index,
             "elapsed_seconds": elapsed,
@@ -212,7 +208,6 @@ class SimulationManager:
         udid: str,
         points: list[RoutePoint],
         speed: float,
-        coordinate_mode: CoordinateMode = "automatic",
     ) -> dict[str, Any]:
         normalized = normalize_points(points)
         serial = await self._require_device(udid)
@@ -225,7 +220,6 @@ class SimulationManager:
                 serial,
                 normalized,
                 speed,
-                coordinate_mode=coordinate_mode,
                 state="connecting",
             )
             self.sessions[key] = session
@@ -252,7 +246,7 @@ class SimulationManager:
                         dvt,
                         session.points,
                         session.speed,
-                        coordinate_transform=lambda point: to_simulation(point, session.coordinate_mode),
+                        coordinate_transform=web_wgs84_to_location,
                         on_progress=progress,
                         on_loop=loop_finished,
                     )
@@ -325,9 +319,8 @@ def create_app(routes_dir: Path | str | None = None, manager: SimulationManager 
     async def coordinate_diagnostic(request: CoordinateDiagnosticRequest) -> dict[str, Any]:
         submitted = normalize_points([request.point], require_two=False)[0]
         stored = simulation_manager.routes.roundtrip([submitted])[0]
-        simulation_point = to_simulation(stored, request.coordinate_mode)
+        simulation_point = web_wgs84_to_location(stored)
         result = {
-            "coordinate_mode": request.coordinate_mode,
             "clicked": submitted,
             "submitted": submitted,
             "stored": stored,
@@ -340,7 +333,7 @@ def create_app(routes_dir: Path | str | None = None, manager: SimulationManager 
             result["submitted"],
             result["stored"],
             result["location_simulation_set"],
-            request.coordinate_mode,
+            "WGS-84",
         )
         return result
 
@@ -351,7 +344,6 @@ def create_app(routes_dir: Path | str | None = None, manager: SimulationManager 
                 request.udid,
                 request.points,
                 request.speed,
-                request.coordinate_mode,
             )
         except DeviceSelectionError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
@@ -373,7 +365,7 @@ def create_app(routes_dir: Path | str | None = None, manager: SimulationManager 
         # HNroute.txt predates the Web UI and follows the CLI's historical
         # BD-09 input convention. Convert only at this Web UI boundary so the
         # map receives the canonical WGS-84 representation.
-        points = [bd09Towgs84(point) for point in route.get_route()]
+        points = [legacy_bd09_route_to_wgs84(point) for point in route.get_route()]
         return {"name": Path(config.config.routeConfig).name, "points": points}
 
     @app.get("/api/routes/{name}")

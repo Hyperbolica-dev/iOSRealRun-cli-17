@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 import config
 from init import route
 from iosrealrun import web
-from run import bd09Towgs84
+from run import legacy_bd09_route_to_wgs84
 
 POINTS = [{"lat": 30.5, "lng": 120.7}, {"lat": 30.51, "lng": 120.71}]
 
@@ -82,6 +82,19 @@ def test_route_save_load_and_name_traversal_rejection(tmp_path):
     assert not (tmp_path / "escape").exists()
 
 
+def test_web_saved_route_reloads_identical_wgs84_precision(tmp_path):
+    points = [
+        {"lat": 30.52802386594508, "lng": 120.7335575167566},
+        {"lat": 30.528128854802127, "lng": 120.73356200828415},
+    ]
+    with make_client(tmp_path) as client:
+        save_response = client.put("/api/routes/wgs-route", json={"points": points})
+        load_response = client.get("/api/routes/wgs-route.txt")
+
+    assert save_response.status_code == 201
+    assert load_response.json()["points"] == points
+
+
 def test_main_page_and_static_assets_load(tmp_path):
     with make_client(tmp_path) as client:
         page = client.get("/")
@@ -96,7 +109,29 @@ def test_main_page_and_static_assets_load(tmp_path):
     assert "api/simulation/start" in script.text
     assert default_route.status_code == 200
     assert len(default_route.json()["points"]) > 1
-    assert default_route.json()["points"][0] == bd09Towgs84(route.get_route(config.config.routeConfig)[0])
+    assert default_route.json()["points"][0] == legacy_bd09_route_to_wgs84(route.get_route(config.config.routeConfig)[0])
+
+
+def test_default_legacy_route_is_converted_once_for_web(monkeypatch, tmp_path):
+    raw_points = [{"lat": 30.5, "lng": 120.7}, {"lat": 30.51, "lng": 120.71}]
+    calls = []
+
+    def convert_once(point):
+        calls.append(point)
+        return {"lat": point["lat"] + 1, "lng": point["lng"] + 1}
+
+    monkeypatch.setattr(web.route, "get_route", lambda: raw_points)
+    monkeypatch.setattr(web, "legacy_bd09_route_to_wgs84", convert_once)
+
+    with make_client(tmp_path) as client:
+        response = client.get("/api/routes/default")
+
+    assert response.status_code == 200
+    assert calls == raw_points
+    assert response.json()["points"] == [
+        {"lat": 31.5, "lng": 121.7},
+        {"lat": 31.51, "lng": 121.71},
+    ]
 
 
 def test_web_cli_uses_new_default_port():
@@ -112,7 +147,7 @@ def test_coordinate_diagnostic_roundtrips_precision_and_reports_boundary(tmp_pat
     with make_client(tmp_path) as client:
         response = client.post(
             "/api/diagnostic/coordinates",
-            json={"point": point, "coordinate_mode": "wgs84"},
+            json={"point": point},
         )
 
     assert response.status_code == 200
@@ -123,16 +158,15 @@ def test_coordinate_diagnostic_roundtrips_precision_and_reports_boundary(tmp_pat
     assert diagnostic["location_simulation_set"] == point
 
 
-def test_coordinate_diagnostic_automatic_conversion_is_explicit(tmp_path):
+def test_coordinate_diagnostic_does_not_convert_mainland_china(tmp_path):
     point = {"lat": 30.52802386594508, "lng": 120.7335575167566}
     with make_client(tmp_path) as client:
         response = client.post("/api/diagnostic/coordinates", json={"point": point})
 
     assert response.status_code == 200
     diagnostic = response.json()
-    assert diagnostic["coordinate_mode"] == "automatic"
     assert diagnostic["stored"] == point
-    assert diagnostic["location_simulation_set"] != point
+    assert diagnostic["location_simulation_set"] == point
 
 
 def test_start_stop_has_one_active_session_per_device(monkeypatch, tmp_path):
@@ -166,6 +200,7 @@ def test_start_stop_has_one_active_session_per_device(monkeypatch, tmp_path):
 
     async def fake_simulate(*args, **kwargs):
         events.append("simulation-start")
+        assert kwargs["coordinate_transform"](POINTS[0]) == POINTS[0]
         try:
             await release.wait()
         finally:
