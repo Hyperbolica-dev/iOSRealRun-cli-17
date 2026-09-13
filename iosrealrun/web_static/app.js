@@ -97,10 +97,14 @@
     select.innerHTML = '<option value="">选择已保存路线</option>';
     names.forEach((name) => { const option = document.createElement('option'); option.value = name; option.textContent = name; select.appendChild(option); });
   }
-  $('load').onclick = async () => {
-    if (!$('route-select').value) return;
-    try { loadPoints((await request(`/api/routes/${encodeURIComponent($('route-select').value)}`)).points); message('路线已加载'); } catch (requestError) { error(requestError.message); }
-  };
+  async function loadSavedRoute(name) {
+    if (!name) return;
+    if (points.length && !window.confirm('加载路线将替换当前未保存路线，是否继续？')) {
+      return;
+    }
+    try { loadPoints((await request(`/api/routes/${encodeURIComponent(name)}`)).points); message('路线已加载'); } catch (requestError) { error(requestError.message); }
+  }
+  $('route-select').onchange = () => loadSavedRoute($('route-select').value);
   $('load-default').onclick = async () => {
     try { loadPoints((await request('/api/routes/default')).points); message('默认路线已加载'); } catch (requestError) { error(requestError.message); }
   };
@@ -122,6 +126,17 @@
       message(`已导入并保存路线“${result.saved_name}”，共 ${result.point_count} 个路线点。`);
     } catch (requestError) { error(requestError.message); }
     $('route-file').value = '';
+  };
+  $('export').onclick = () => {
+    if (points.length < 2) return error('请先在地图上添加至少两个路线点');
+    const content = points.map((point) => JSON.stringify({ lng: String(point.lng), lat: String(point.lat) })).join(',');
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = $('route-select').value || 'route.txt';
+    link.click();
+    URL.revokeObjectURL(link.href);
+    message(`已导出路线文件“${link.download}”`);
   };
   $('save').onclick = async () => {
     const name = window.prompt('路线名称（字母、数字、.、_、-）：');
