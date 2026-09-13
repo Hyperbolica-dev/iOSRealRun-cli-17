@@ -61,3 +61,24 @@ def test_location_is_cleared_on_cancellation(monkeypatch):
         asyncio.run(main.simulate_route(object(), [], 3.3))
 
     assert simulation.events == ["open", "clear", "close"]
+
+
+def test_location_is_cleared_when_route_fails(monkeypatch):
+    simulation = None
+
+    class Simulation(FakeLocationSimulation):
+        def __init__(self, dvt):
+            nonlocal simulation
+            super().__init__(dvt)
+            simulation = self
+
+    async def fail(*args):
+        raise RuntimeError("route failed")
+
+    monkeypatch.setattr(main.location, "LocationSimulation", Simulation)
+    monkeypatch.setattr(main.run, "run", fail)
+
+    with pytest.raises(RuntimeError, match="route failed"):
+        asyncio.run(main.simulate_route(object(), [], 3.3))
+
+    assert simulation.events == ["open", "clear", "close"]
