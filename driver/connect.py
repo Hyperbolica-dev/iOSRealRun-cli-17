@@ -51,6 +51,27 @@ async def get_usbmux_lockdownclient(serial: str | None = None) -> LockdownClient
         return lockdown
 
 
+async def get_usbmux_device_info(serial: str) -> dict:
+    """Return non-pairing device metadata for UI/diagnostic consumers."""
+    lockdown = await create_using_usbmux(serial=serial, autopair=False)
+    try:
+        values = lockdown.all_values
+        try:
+            developer_mode = await lockdown.get_developer_mode_status()
+        except Exception:
+            logger.debug("Developer Mode status unavailable for %s", serial, exc_info=True)
+            developer_mode = None
+        return {
+            "udid": lockdown.udid,
+            "name": values.get("DeviceName"),
+            "version": values.get("ProductVersion"),
+            "locked": bool(values.get("PasswordProtected")),
+            "developer_mode": developer_mode,
+        }
+    finally:
+        await lockdown.close()
+
+
 def get_version(lockdown: LockdownClient) -> str:
     return lockdown.product_version
 
