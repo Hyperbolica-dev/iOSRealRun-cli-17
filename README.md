@@ -2,6 +2,8 @@
 
 基于 `pymobiledevice3` 的 iOS 17+ 路线定位模拟工具，支持 CLI 和本地 Web UI。
 
+![iOSRealRun Web UI 界面](medias/image-1.png)
+
 ## 环境与安装
 
 - Python 3.12
@@ -39,6 +41,12 @@ uv run iosrealrun --list-routes
 uv run iosrealrun-ui
 ```
 
+或
+
+```shell
+uv run iosrealrun-ui --open-browser
+```
+
 默认地址：<http://127.0.0.1:17865>。可用 `--port PORT` 修改。默认只监听本机；`--host` 暴露到其他地址时没有认证保护。
 
 Web UI 支持：
@@ -46,6 +54,13 @@ Web UI 支持：
 - 选择设备、查看系统版本、Developer Mode 和隧道后端
 - 地图编辑、导入、自动保存、下拉框加载和导出路线
 - 设置速度、开始/停止模拟和查看状态
+
+### Web UI 使用步骤
+
+1. 连接 iPhone，信任此电脑并开启 Developer Mode，在页面中选择设备。
+2. 准备路线：加载默认路线（海宁校区操场），或在地图上手动画线，也可以导入路线文件。
+3. 设置速度，点击“开始模拟”。
+4. 运行到需要的距离后点击“停止模拟”；程序会清除模拟位置，设备随后恢复真实定位。
 
 路线和模拟定位统一使用 WGS-84；该路径已通过实体 iPhone 模拟定位验证。导入坐标格式只影响导入：默认 WGS-84，也可选择旧版 iOSRealRun（BD-09）或 GCJ-02；导入后会转换为 WGS-84 并自动保存。导出始终使用当前 WGS-84 路线。
 
