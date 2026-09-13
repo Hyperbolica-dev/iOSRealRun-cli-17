@@ -104,6 +104,23 @@
   $('load-default').onclick = async () => {
     try { loadPoints((await request('/api/routes/default')).points); message('默认路线已加载'); } catch (requestError) { error(requestError.message); }
   };
+  $('route-file').onchange = async () => {
+    const file = $('route-file').files[0];
+    if (!file) return;
+    if (points.length && !window.confirm('导入路线将替换当前未保存路线，是否继续？')) {
+      $('route-file').value = '';
+      return;
+    }
+    const form = new FormData();
+    form.append('file', file);
+    form.append('coordinate_system', $('import-coordinate').value);
+    try {
+      const result = await request('/api/routes/import', { method: 'POST', body: form });
+      loadPoints(result.points);
+      message(`已导入 ${result.point_count} 个路线点；路线长度：${$('distance').textContent}`);
+    } catch (requestError) { error(requestError.message); }
+    $('route-file').value = '';
+  };
   $('save').onclick = async () => {
     const name = window.prompt('路线名称（字母、数字、.、_、-）：');
     if (!name) return;

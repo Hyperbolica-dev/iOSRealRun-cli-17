@@ -14,9 +14,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from geopy.distance import geodesic
 from platformdirs import user_data_dir
 from pydantic import BaseModel, Field
 from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
@@ -25,13 +26,14 @@ import config
 from driver import connect
 from init import init, route, tunnel
 from iosrealrun import cli
-from iosrealrun.coordinates import web_wgs84_to_location
+from iosrealrun.coordinates import gcj02_to_wgs84, web_wgs84_to_location
 from run import legacy_bd09_route_to_wgs84
 from util import route as route_parser
 
 logger = logging.getLogger(__name__)
 WEB_ASSETS = Path(__file__).with_name("web_static")
 ROUTE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
+MAX_ROUTE_UPLOAD_BYTES = 1024 * 1024
 
 
 class RoutePoint(BaseModel):
@@ -80,6 +82,48 @@ def normalize_route_name(name: str) -> str:
     if not ROUTE_NAME_RE.fullmatch(name) or name in {".", ".."}:
         raise ValueError("invalid route name")
     return name if name.endswith(".txt") else f"{name}.txt"
+
+
+def route_distance(points: list[dict[str, float]]) -> float:
+    return sum(
+        geodesic(
+            (points[index - 1]["lat"], points[index - 1]["lng"]),
+            (points[index]["lat"], points[index]["lng"]),
+        ).m
+        for index in range(1, len(points))
+    )
+
+
+def parse_imported_route(content: bytes, coordinate_system: str) -> list[dict[str, float]]:
+    if coordinate_system not in {"wgs84", "bd09", "gcj02"}:
+        raise ValueError("不支持的坐标格式，请选择 WGS-84、旧版 iOSRealRun（BD-09）或 GCJ-02")
+    try:
+        text = content.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise ValueError("路线文件必须是 UTF-8 文本") from error
+    try:
+        parsed = route_parser.parse_route(text)
+    except (KeyError, SyntaxError, TypeError, ValueError) as error:
+        raise ValueError("路线文件格式错误，请使用现有 iOSRealRun 文本路线格式") from error
+    if len(parsed) < 2:
+        raise ValueError("路线至少需要两个点")
+    try:
+        points = normalize_points([RoutePoint(**point) for point in parsed])
+    except (TypeError, ValueError) as error:
+        message = str(error)
+        if message.startswith("latitude"):
+            message = "纬度必须在 -90 到 90 之间"
+        elif message.startswith("longitude"):
+            message = "经度必须在 -180 到 180 之间"
+        raise ValueError(f"路线文件中的坐标无效：{message}") from error
+    if coordinate_system == "bd09":
+        points = [legacy_bd09_route_to_wgs84(point) for point in points]
+    elif coordinate_system == "gcj02":
+        points = [
+            {"lat": wgs_lat, "lng": wgs_lng}
+            for wgs_lat, wgs_lng in (gcj02_to_wgs84(point["lat"], point["lng"]) for point in points)
+        ]
+    return normalize_points([RoutePoint(**point) for point in points])
 
 
 def default_routes_dir() -> Path:
@@ -336,6 +380,26 @@ def create_app(routes_dir: Path | str | None = None, manager: SimulationManager 
             "WGS-84",
         )
         return result
+
+    @app.post("/api/routes/import")
+    async def import_route(
+        file: UploadFile = File(...),  # noqa: B008 - FastAPI declares multipart fields this way
+        coordinate_system: str = Form("wgs84"),
+    ) -> dict[str, Any]:
+        content = await file.read(MAX_ROUTE_UPLOAD_BYTES + 1)
+        if len(content) > MAX_ROUTE_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail="文件过大，路线文本不能超过 1 MiB")
+        try:
+            points = parse_imported_route(content, coordinate_system)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        return {
+            "filename": file.filename,
+            "coordinate_system": coordinate_system,
+            "points": points,
+            "point_count": len(points),
+            "distance_meters": route_distance(points),
+        }
 
     @app.post("/api/simulation/start", status_code=202)
     async def start_simulation(request: SimulationRequest) -> dict[str, Any]:

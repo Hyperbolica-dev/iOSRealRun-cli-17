@@ -43,9 +43,17 @@
         <div class="button-row">
           <button id="load-default">加载默认路线</button>
           <button id="load">加载路线</button>
+          <label class="button" for="route-file">导入路线</label>
+          <input id="route-file" type="file" accept=".txt,text/plain" hidden>
           <button id="save">保存路线</button>
           <button id="delete">删除路线</button>
         </div>
+        <label for="import-coordinate">坐标格式</label>
+        <select id="import-coordinate">
+          <option value="wgs84">WGS-84（推荐 / Web UI 路线）</option>
+          <option value="bd09">旧版 iOSRealRun（BD-09）</option>
+          <option value="gcj02">GCJ-02</option>
+        </select>
       </section>
       <section>
         <h2>坐标诊断</h2>

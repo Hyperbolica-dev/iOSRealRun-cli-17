@@ -43,6 +43,10 @@ uv run iosrealrun-ui
 
 Web UI 的地图、保存路线和模拟定位统一使用 WGS-84。该 WGS-84 Web UI 路径已通过实体 iPhone 的模拟定位验证。坐标诊断按钮可以对比 Leaflet 点击、API 提交、路线存储以及传给 `LocationSimulation.set()` 的坐标；正常情况下四者只存在浮点表示差异，不会因为地理位置在中国大陆而自动转换。内置的旧 `HNroute.txt` 在 Web UI 加载时仅转换为地图使用的 WGS-84 表示；旧 CLI 路线仍保持原有 BD-09 兼容行为。
 
+### 导入已有路线
+
+Web UI 支持现有 iOSRealRun 文本路线格式。点击“导入路线”选择本地文件，并明确选择坐标格式；默认 WGS-84，旧版 iOSRealRun 文件请选择“旧版 iOSRealRun（BD-09）”。导入文件不会自动保存，导入后可以在地图上编辑，再使用“保存路线”写入 Web UI 的 WGS-84 路线存储。
+
 Linux 上 iOS 17.4+ 的 userspace/CoreDeviceProxy 路径不需要 root；iOS 17.0–17.3.1 仍需要先运行 privileged `tunneld`。
 
 ### 平台和 iOS 17 tunnel 支持矩阵
