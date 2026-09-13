@@ -40,14 +40,16 @@
       <section>
         <h2>路线文件</h2>
         <select id="route-select"><option value="">选择已保存路线</option></select>
-        <div class="button-row">
-          <button id="load-default">加载默认路线</button>
+        <div class="route-actions">
           <button id="load">加载路线</button>
-          <label class="button" for="route-file">导入路线</label>
-          <input id="route-file" type="file" accept=".txt,text/plain" hidden>
-          <button id="save">保存路线</button>
           <button id="delete">删除路线</button>
         </div>
+        <div class="route-actions">
+          <label class="button" for="route-file">导入路线文件</label>
+          <input id="route-file" type="file" accept=".txt,text/plain" hidden>
+          <button id="save">保存当前路线</button>
+        </div>
+        <button id="load-default">加载默认路线</button>
         <label for="import-coordinate">坐标格式</label>
         <select id="import-coordinate">
           <option value="wgs84">WGS-84（推荐 / Web UI 路线）</option>
